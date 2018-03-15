@@ -1,12 +1,15 @@
 """
 __author__ = 'xumingming'
 """
-
+import gc
 import pandas as pd
 import time
 import numpy as np
-from sklearn.cross_validation import train_test_split
+# from sklearn.cross_validation import train_test_split
+from sklearn.model_selection import train_test_split
 import lightgbm as lgb
+
+from utils import *
 
 
 def lgb_modelfit_nocv(params, dtrain, dvalid, predictors, target='target', objective='binary', metrics='auc',
@@ -69,7 +72,7 @@ def lgb_modelfit_nocv(params, dtrain, dvalid, predictors, target='target', objec
 
 
 path = '/Users/xumingming/Kaggle/'
-
+train_file_name = 'train.csv'
 dtypes = {
     'ip': 'uint32',
     'app': 'uint16',
@@ -82,14 +85,13 @@ dtypes = {
 min_interval = 10
 
 print('load train...')
-train_df = pd.read_csv(path + "train.csv", nrows=40000000, dtype=dtypes,
+train_df = pd.read_csv(path + train_file_name, nrows=40000000, dtype=dtypes,
                        usecols=['ip', 'app', 'device', 'os', 'channel', 'click_time', 'attributed_time',
                                 'is_attributed'])
 print('load test...')
 test_df = pd.read_csv(path + "test.csv", dtype=dtypes,
                       usecols=['ip', 'app', 'device', 'os', 'channel', 'click_time', 'click_id'])
 
-import gc
 
 len_train = len(train_df)
 train_df = train_df.append(test_df)
@@ -105,38 +107,66 @@ train_df['day'] = pd.to_datetime(train_df.click_time).dt.day.astype('uint8')
 gc.collect()
 
 print('group by...')
-gp = train_df[['ip', 'day', 'hour', 'channel']].groupby(by=['ip', 'day', 'hour'])[
-    ['channel']].count().reset_index().rename(index=str, columns={'channel': 'qty'})
+# gp = train_df[['ip', 'day', 'hour', 'channel']].groupby(by=['ip', 'day', 'hour'])[
+#     ['channel']].count().reset_index().rename(index=str, columns={'channel': 'qty'})
 
-ip_device_day_channel = train_df[['ip', 'device', 'day', 'hour', 'channel']].groupby(by=['ip', 'device', 'day', 'hour'])[
-    ['channel']].count().reset_index().rename(index=str, columns={'channel': 'ip_device_channel'})
+# ip_device_channel = train_df[['ip', 'device', 'day', 'hour', 'channel']].groupby(by=['ip', 'device', 'day', 'hour'])[
+#     ['channel']].count().reset_index().rename(index=str, columns={'channel': 'ip_device_channel'})
 
-ip_app_device_channel = train_df[['ip','device','app','day','hour','channel']].groupby(
-    by=['ip','device','app','day','hour']
-    )[['channel']].count().reset_index().rename(index=str,columns={'channel':'ip_app_device_channel'})
+# ip_app_device_channel = train_df[['ip', 'device', 'app', 'day', 'hour', 'channel']].groupby(
+#     by=['ip', 'device', 'app', 'day', 'hour']
+# )[['channel']].count().reset_index().rename(index=str, columns={'channel': 'ip_app_device_channel'})
+#
+# ip_app_device_os_channel = train_df[['ip', 'app', 'device', 'os', 'channel', 'day', 'hour']].groupby(
+#     by=['ip', 'app', 'device', 'os', 'day', 'hour'])[['channel']].count().reset_index().rename(index=str, columns={
+#     'channel': 'ip_app_device_os_channel'})
+# gp.info()
+group_mtr = [
+    ['ip', 'day', 'hour', 'channel'],
+    ['device', 'day', 'hour', 'channel'],
+    ['app', 'day', 'hour', 'channel'],
+    ['os', 'day', 'hour', 'channel'],
 
-ip_app_device_os_channel = train_df[['ip','app','device','os','channel','day','hour']].groupby(
-    by=['ip','app','device','os','day','hour'])[['channel']].count().reset_index().rename(index=str,columns={'channel':'ip_app_device_os_channel'})
+    ['ip', 'device', 'day', 'hour', 'channel'],
+    ['ip', 'os', 'day', 'hour', 'channel'],
+    ['ip', 'app', 'day', 'hour', 'channel'],
 
-gp.info()
+    ['ip', 'device', 'os', 'day', 'hour', 'channel'],
+    ['ip', 'device', 'app', 'day', 'hour', 'channel'],
+
+    ['ip', 'device', 'app', 'os', 'day', 'hour', 'channel'],
+]
+group_result = [count_group_by(train_df, x) for x in group_mtr]
 
 print('merge...')
-train_df = train_df.merge(gp, on=['ip', 'day', 'hour'], how='left')
-
-train_df = train_df.merge(ip_device_day_channel, on=['ip', 'device', 'day', 'hour'], how='left')
+for _index in range(len(group_result)):
+    result, feature_name = group_result[_index]
+    train_df = train_df.merge(result, on=group_mtr[_index][:-1], how='left')
+group_result_feature_names = [g[1] for g in group_result]
+del group_result
+gc.collect()
+# train_df = train_df.merge(gp, on=['ip', 'day', 'hour'], how='left')
+# train_df = train_df.merge(ip_app_device_os_channel, on=['ip', 'app', 'device', 'os', 'day', 'hour'], how='left')
+# train_df = train_df.merge(ip_device_channel, on=['ip', 'device', 'day', 'hour'], how='left')
 print("vars and data type: ")
 train_df.info()
 
+gc.collect()
+
+split_count = 3000000
 test_df = train_df[len_train:]
-val_df = train_df[(len_train - 3000000):len_train]
-train_df = train_df[:(len_train - 3000000)]
+val_df = train_df[(len_train - split_count):len_train]
+train_df = train_df[:(len_train - split_count)]
 
 print("train size: ", len(train_df))
 print("valid size: ", len(val_df))
 print("test size : ", len(test_df))
 
 target = 'is_attributed'
-predictors = ['app', 'device', 'os', 'channel', 'hour', 'qty', 'ip_device_channel','ip_app_device_channel','ip_app_device_os_channel']
+predictors = ['app', 'device', 'os', 'channel', 'hour']
+
+predictors.extend(group_result_feature_names)
+print(predictors)
 categorical = ['app', 'device', 'os', 'channel', 'hour']
 
 sub = pd.DataFrame()

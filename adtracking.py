@@ -122,14 +122,15 @@ gp.info()
 
 print('merge...')
 train_df = train_df.merge(gp, on=['ip', 'day', 'hour'], how='left')
-
 train_df = train_df.merge(ip_device_day_channel, on=['ip', 'device', 'day', 'hour'], how='left')
+train_df = train_df.merge(ip_app_device_channel, on=['ip', 'app', 'device', 'day', 'hour'], how='left')
+train_df = train_df.merge(ip_app_device_os_channel, on=['ip', 'app', 'os','device', 'day', 'hour'], how='left')
 print("vars and data type: ")
 train_df.info()
 
 test_df = train_df[len_train:]
-val_df = train_df[(len_train - 3000000):len_train]
-train_df = train_df[:(len_train - 3000000)]
+val_df = train_df[(len_train - 3600000):len_train]
+train_df = train_df[:(len_train - 3600000)]
 
 print("train size: ", len(train_df))
 print("valid size: ", len(val_df))
@@ -146,10 +147,10 @@ gc.collect()
 
 print("Training...")
 params = {
-    'learning_rate': 0.1,
+    'learning_rate': 0.01,
     # 'is_unbalance': 'true', # replaced with scale_pos_weight argument
-    'num_leaves': 1400,  # we should let it be smaller than 2^(max_depth)
-    'max_depth': 3,  # -1 means no limit
+    'num_leaves': 400,  # we should let it be smaller than 2^(max_depth)
+    'max_depth': -1,  # -1 means no limit
     'min_child_samples': 100,  # Minimum number of data need in a child(min_data_in_leaf)
     'max_bin': 100,  # Number of bucketed bin for feature values
     'subsample': .7,  # Subsample ratio of the training instance.
@@ -177,6 +178,6 @@ gc.collect()
 print("Predicting...")
 sub['is_attributed'] = bst.predict(test_df[predictors])
 print("writing...")
-sub.to_csv('sub_lgb_balanced.csv', index=False)
+sub.to_csv('sub_lgb_balanced_36.csv', index=False)
 print("done...")
 print(sub.info())

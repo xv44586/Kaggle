@@ -3,10 +3,12 @@ __author__ = 'xumingming'
 """
 import gc
 import pandas as pd
+from functools import reduce
+import itertools
 import time
 import numpy as np
-# from sklearn.cross_validation import train_test_split
-from sklearn.model_selection import train_test_split
+from sklearn.cross_validation import train_test_split
+# from sklearn.model_selection import train_test_split
 import lightgbm as lgb
 
 from utils import *
@@ -92,7 +94,6 @@ print('load test...')
 test_df = pd.read_csv(path + "test.csv", dtype=dtypes,
                       usecols=['ip', 'app', 'device', 'os', 'channel', 'click_time', 'click_id'])
 
-
 len_train = len(train_df)
 train_df = train_df.append(test_df)
 
@@ -121,29 +122,64 @@ print('group by...')
 #     by=['ip', 'app', 'device', 'os', 'day', 'hour'])[['channel']].count().reset_index().rename(index=str, columns={
 #     'channel': 'ip_app_device_os_channel'})
 # gp.info()
-group_mtr = [
-    ['ip', 'day', 'hour', 'channel'],
-    ['device', 'day', 'hour', 'channel'],
-    ['app', 'day', 'hour', 'channel'],
-    ['os', 'day', 'hour', 'channel'],
+feature_matrix = [
+    ['ip', 'channel'],
+    ['device', 'channel'],
+    ['app', 'channel'],
+    ['os', 'channel'],
+    ['channel', 'os'],
 
-    ['ip', 'device', 'day', 'hour', 'channel'],
-    ['ip', 'os', 'day', 'hour', 'channel'],
-    ['ip', 'app', 'day', 'hour', 'channel'],
+    ['ip', 'device', 'channel'],
+    ['ip', 'os', 'channel'],
+    ['ip', 'app', 'channel'],
+    ['ip', 'channel', 'os'],
 
-    ['ip', 'device', 'os', 'day', 'hour', 'channel'],
-    ['ip', 'device', 'app', 'day', 'hour', 'channel'],
+    ['ip', 'device', 'os', 'channel'],
+    ['ip', 'device', 'app', 'channel'],
+    ['ip', 'device', 'channel', 'app'],
 
-    ['ip', 'device', 'app', 'os', 'day', 'hour', 'channel'],
+    ['ip', 'device', 'app', 'os', 'channel'],
+    ['ip', 'device', 'app', 'channel', 'os'],
+
+    ['ip', 'device', 'app', 'os', 'channel', 'click_time'],
 ]
-group_result = [count_group_by(train_df, x) for x in group_mtr]
+
+# group_features = ['ip', 'device', 'os', 'channel', 'app']
+# feature_matrix = []
+# for g_feature in itertools.product(group_features, group_features):
+#     if len(set(g_feature)) > 1:
+#         feature_matrix.append(list(g_feature))
+
+# for g_feature in itertools.product(group_features, group_features, group_features):
+#     if len(set(g_feature)) > 2:
+#         feature_matrix.append(list(g_feature))
+#
+# for g_feature in itertools.product(group_features, group_features, group_features, group_features):
+#     if len(set(g_feature)) > 3:
+#         feature_matrix.append(list(g_feature))
+#
+# for g_feature in itertools.product(group_features, group_features, group_features, group_features, group_features):
+#     if len(set(g_feature)) > 4:
+#         feature_matrix.append(list(g_feature))
+
+group_result = (count_group_by(train_df, x) for x in feature_matrix)
 
 print('merge...')
-for _index in range(len(group_result)):
-    result, feature_name = group_result[_index]
-    train_df = train_df.merge(result, on=group_mtr[_index][:-1], how='left')
+_index = 0
+
+for gp in group_result:
+    result, feature_name = gp
+    print(result is gp[0])
+    train_df = train_df.merge(result, on=feature_matrix[_index][:-1], how='left')
+    _index += 1
+
+    del result
+    gc.collect()
+
 group_result_feature_names = [g[1] for g in group_result]
+
 del group_result
+del _index
 gc.collect()
 # train_df = train_df.merge(gp, on=['ip', 'day', 'hour'], how='left')
 # train_df = train_df.merge(ip_app_device_os_channel, on=['ip', 'app', 'device', 'os', 'day', 'hour'], how='left')
@@ -178,7 +214,7 @@ print("Training...")
 params = {
     'learning_rate': 0.1,
     # 'is_unbalance': 'true', # replaced with scale_pos_weight argument
-    'num_leaves': 1400,  # we should let it be smaller than 2^(max_depth)
+    'num_leaves': 400,  # we should let it be smaller than 2^(max_depth)
     'max_depth': 3,  # -1 means no limit
     'min_child_samples': 100,  # Minimum number of data need in a child(min_data_in_leaf)
     'max_bin': 100,  # Number of bucketed bin for feature values
